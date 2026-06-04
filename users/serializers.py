@@ -16,3 +16,8 @@ class UserSerializer(serializers.ModelSerializer):
             "company_name",
             "profile_image",
         ]
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField()
+    new_password = serializers.CharField()
