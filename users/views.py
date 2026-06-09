@@ -1,7 +1,6 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from django.contrib.auth import authenticate
@@ -14,6 +13,8 @@ import random
 
 from .models import User, PasswordResetOTP
 from .serializers import UserSerializer
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 
 # =========================
 # IMAGEKIT
@@ -258,7 +259,8 @@ def reset_password(request):
     record = PasswordResetOTP.objects.filter(
         email=email,
         otp=otp,
-        company_status=False
+        # company_status=False
+        is_used=False
     ).first()
 
     if not record:
@@ -280,11 +282,6 @@ def reset_password(request):
 
     return Response({"message": "Password updated successfully"})
 
-
-# users/views.py
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
 
 # =========================
 # GET ADMIN PROFILE
@@ -350,3 +347,47 @@ def update_admin_profile(request, id):
             {"error": "Admin not found"},
             status=404
         )
+    
+@api_view(["GET"])
+def company_profile(request, id):
+
+    try:
+
+        company = User.objects.get(
+            id=id,
+            role="company"
+        )
+
+        serializer = UserSerializer(company)
+
+        return Response(serializer.data)
+
+    except User.DoesNotExist:
+
+        return Response(
+            {"error": "Company not found"},
+            status=404
+        )
+
+
+@api_view(["GET"])
+def candidate_profile(request, id):
+
+    try:
+
+        candidate = User.objects.get(
+            id=id,
+            role="candidate"
+        )
+
+        serializer = UserSerializer(candidate)
+
+        return Response(serializer.data)
+
+    except User.DoesNotExist:
+
+        return Response(
+            {"error": "Candidate not found"},
+            status=404
+        )
+
