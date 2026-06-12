@@ -239,6 +239,31 @@ def send_otp(request):
 
     return Response({"message": "OTP sent"})
 
+@api_view(["POST"])
+def verify_otp(request):
+
+    email = request.data.get("email")
+    otp = request.data.get("otp")
+
+    if not email or not otp:
+        return Response(
+            {"error": "Email and OTP required"},
+            status=400
+        )
+
+    record = PasswordResetOTP.objects.filter(
+        email=email,
+        otp=otp,
+        is_used=False
+    ).first()
+
+    if not record:
+        return Response({"error": "Invalid OTP"}, status=400)
+
+    if record.is_expired():
+        return Response({"error": "OTP expired"}, status=400)
+
+    return Response({"message": "OTP verified"})
 
 # =========================
 # RESET PASSWORD (FIXED)

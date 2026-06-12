@@ -1,10 +1,11 @@
 from django.urls import path
-from .views import admin_profile, all_companies, approve_company, candidate_profile, company_profile, pending_companies, register_user, login_user, reject_company, send_otp, reset_password, update_admin_profile 
+from .views import admin_profile, all_companies, approve_company, candidate_profile, company_profile, pending_companies, register_user, login_user, reject_company, send_otp, reset_password, update_admin_profile, verify_otp 
 
 urlpatterns = [
     path("register/", register_user),
     path("login/", login_user),
     path("send-otp/", send_otp),
+    path("verify-otp/", verify_otp),
     path("reset-password/", reset_password),
     path("pending-companies/", pending_companies),
     path("approve-company/<int:id>/", approve_company),
