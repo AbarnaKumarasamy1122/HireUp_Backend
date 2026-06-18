@@ -416,3 +416,22 @@ def candidate_profile(request, id):
             status=404
         )
 
+@api_view(["PUT"])
+def update_resume(request, id):
+
+    try:
+        candidate = User.objects.get(id=id, role="candidate")
+
+        candidate.resume_url = request.data.get("resume_url")
+
+        candidate.save()
+
+        return Response({
+            "message": "Resume updated successfully"
+        })
+
+    except User.DoesNotExist:
+        return Response(
+            {"error": "Candidate not found"},
+            status=404
+        )

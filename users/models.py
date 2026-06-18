@@ -78,6 +78,8 @@ class User(AbstractUser):
         null=True
     )
 
+    resume_url = models.URLField(blank=True, null=True)
+
     REQUIRED_FIELDS = []
 
     def __str__(self):

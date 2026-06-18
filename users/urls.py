@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import admin_profile, all_companies, approve_company, candidate_profile, company_profile, pending_companies, register_user, login_user, reject_company, send_otp, reset_password, update_admin_profile, verify_otp 
+from .views import admin_profile, all_companies, approve_company, candidate_profile, company_profile, pending_companies, register_user, login_user, reject_company, send_otp, reset_password, update_admin_profile, update_resume, verify_otp 
 
 urlpatterns = [
     path("register/", register_user),
@@ -15,4 +15,5 @@ urlpatterns = [
     path("update-admin-profile/<int:id>/", update_admin_profile),
     path("<int:id>/company-profile/", company_profile),
     path("<int:id>/candidate-profile/", candidate_profile),
+    path("update-resume/<int:id>/", update_resume),
 ]

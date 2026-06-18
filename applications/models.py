@@ -1,35 +1,86 @@
 from django.db import models
-from jobs.models import Job
 from users.models import User
+from jobs.models import Job
 
 
 class Application(models.Model):
 
-    STATUS = (
+    STATUS_CHOICES = (
         ("pending", "Pending"),
         ("shortlisted", "Shortlisted"),
         ("rejected", "Rejected"),
         ("accepted", "Accepted"),
     )
 
-    job = models.ForeignKey(Job, on_delete=models.CASCADE)
-    candidate = models.ForeignKey(User, on_delete=models.CASCADE)
+    candidate = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="applications"
+    )
 
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
+    job = models.ForeignKey(
+        Job,
+        on_delete=models.CASCADE,
+        related_name="applications"
+    )
 
-    email = models.EmailField()
-    phone = models.CharField(max_length=20)
+    # Application Details
+    cover_letter = models.TextField(
+        blank=True,
+        null=True
+    )
 
-    degree = models.CharField(max_length=255)
-    experience = models.CharField(max_length=100)
+    resume_url = models.URLField(
+        blank=True,
+        null=True
+    )
 
-    salary_expectation = models.CharField(max_length=100)
+    experience = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True
+    )
 
-    cover_letter = models.TextField(blank=True, null=True)
+    degree = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True
+    )
 
-    upload_cv = models.FileField(upload_to="cvs/")
+    expected_salary = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True
+    )
 
-    status = models.CharField(max_length=20, choices=STATUS, default="pending")
+    contact_number = models.CharField(
+        max_length=30,
+        blank=True,
+        null=True
+    )
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    address = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    skills = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending"
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+        unique_together = ["candidate", "job"]
+
+    def __str__(self):
+        return f"{self.candidate.email} - {self.job.title}"
