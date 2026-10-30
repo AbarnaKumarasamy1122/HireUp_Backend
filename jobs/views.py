@@ -5,6 +5,7 @@ from rest_framework.decorators import permission_classes
 from .models import Job
 from .serializers import JobSerializer
 from django.core.mail import send_mail
+from notifications.utils import notify_admins
 
 # POST JOB
 @api_view(["POST"])
@@ -19,6 +20,10 @@ def post_job(request):
         location=request.data.get("location"),
         salary=request.data.get("salary"),
         deadline=request.data["deadline"]
+    )
+    notify_admins(
+        "New job posted",
+        f"{request.user.company_name or request.user.email} posted '{job.title}'.",
     )
 
     return Response(JobSerializer(job).data)

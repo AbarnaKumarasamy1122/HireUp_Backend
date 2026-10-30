@@ -4,15 +4,26 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from django.contrib.auth import authenticate
+from django.conf import settings
 from django.core.mail import send_mail
-
-from imagekitio import ImageKit
+from django.utils import timezone
 
 import os
 import random
+import logging
+import smtplib
+import hashlib
+import hmac
+import time
+import uuid
 
-from .models import User, PasswordResetOTP
+from .models import ContactMessage, User, PasswordResetOTP
+
+logger = logging.getLogger(__name__)
 from .serializers import UserSerializer
+from jobs.models import Job
+from applications.models import Application
+from notifications.utils import notify_admins, notify_user
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
@@ -20,20 +31,22 @@ from rest_framework.permissions import IsAuthenticated
 # IMAGEKIT
 # =========================
 
-imagekit = ImageKit(
-    public_key=os.getenv("IMAGEKIT_PUBLIC_KEY"),
-    private_key=os.getenv("IMAGEKIT_PRIVATE_KEY"),
-    url_endpoint=os.getenv("IMAGEKIT_URL_ENDPOINT"),
-)
-
 @api_view(["GET"])
 def imagekit_auth(request):
+    token = str(uuid.uuid4())
+    expire = int(time.time()) + 1800
+    value = f"{token}{expire}".encode("utf-8")
+    signature = hmac.new(
+        os.environ["IMAGEKIT_PRIVATE_KEY"].encode("utf-8"),
+        value,
+        hashlib.sha1,
+    ).hexdigest()
 
-    authentication_parameters = (
-        imagekit.get_authentication_parameters()
-    )
-
-    return Response(authentication_parameters)
+    return Response({
+        "token": token,
+        "expire": expire,
+        "signature": signature,
+    })
 
 
 # =========================
@@ -76,6 +89,17 @@ def register_user(request):
 
         company_status="pending" if role == "company" else "approved"
     )
+
+    if role == "company":
+        notify_admins(
+            "New company approval request",
+            f"{user.company_name or user.email} registered and is waiting for approval.",
+        )
+    else:
+        notify_admins(
+            "New candidate registered",
+            f"{user.first_name} {user.last_name} ({user.email}) joined HireUp.",
+        )
 
     return Response({
         "message": "Registration successful. Wait for admin approval."
@@ -122,6 +146,7 @@ def login_user(request):
     return Response({
 
         "token": str(refresh.access_token),
+        "refresh": str(refresh),
 
         "user": {
             "id": user.id,
@@ -172,6 +197,11 @@ def approve_company(request, id):
     company.company_status = "approved"
 
     company.save()
+    notify_user(
+        company,
+        "Company approved",
+        "Your company account has been approved. You can now post jobs.",
+    )
 
     return Response({
         "message": "Company approved successfully"
@@ -186,6 +216,11 @@ def reject_company(request, id):
     company = User.objects.get(id=id)
     company.company_status = "rejected"
     company.save()
+    notify_user(
+        company,
+        "Company application rejected",
+        "Your company registration was rejected. Please contact support for details.",
+    )
 
     return Response({"message": "Company rejected"})
 
@@ -201,6 +236,128 @@ def all_companies(request):
     serializer = UserSerializer(companies, many=True)
 
     return Response(serializer.data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_dashboard(request):
+    if request.user.role != "admin":
+        return Response({"error": "Only admins can view dashboard data"}, status=403)
+
+    return Response({
+        "candidates": User.objects.filter(role="candidate").count(),
+        "companies": User.objects.filter(role="company").count(),
+        "approved_companies": User.objects.filter(
+            role="company",
+            company_status="approved",
+        ).count(),
+        "pending_companies": User.objects.filter(
+            role="company",
+            company_status="pending",
+        ).count(),
+        "rejected_companies": User.objects.filter(
+            role="company",
+            company_status="rejected",
+        ).count(),
+        "jobs": Job.objects.count(),
+        "applications": Application.objects.count(),
+        "applications_by_status": {
+            "pending": Application.objects.filter(status="pending").count(),
+            "shortlisted": Application.objects.filter(status="shortlisted").count(),
+            "accepted": Application.objects.filter(status="accepted").count(),
+            "rejected": Application.objects.filter(status="rejected").count(),
+        },
+    })
+
+
+@api_view(["GET"])
+def public_statistics(request):
+    active_jobs = Job.objects.filter(deadline__gte=timezone.localdate()).count()
+    return Response({
+        "active_jobs": active_jobs,
+        "companies": User.objects.filter(
+            role="company",
+            company_status="approved",
+        ).count(),
+        "candidates": User.objects.filter(role="candidate").count(),
+        "hires": Application.objects.filter(status="accepted").count(),
+        "jobs_by_location_type": {
+            "remote": Job.objects.filter(
+                deadline__gte=timezone.localdate(),
+                location_type="remote",
+            ).count(),
+            "onsite": Job.objects.filter(
+                deadline__gte=timezone.localdate(),
+                location_type="onsite",
+            ).count(),
+            "hybrid": Job.objects.filter(
+                deadline__gte=timezone.localdate(),
+                location_type="hybrid",
+            ).count(),
+        },
+    })
+
+
+@api_view(["POST"])
+def create_contact_message(request):
+    name = str(request.data.get("name", "")).strip()
+    email = str(request.data.get("email", "")).strip()
+    message = str(request.data.get("message", "")).strip()
+
+    if not name or not email or not message:
+        return Response(
+            {"error": "Name, email, and message are required"},
+            status=400,
+        )
+
+    from django.core.validators import validate_email
+    from django.core.exceptions import ValidationError
+
+    try:
+        validate_email(email)
+    except ValidationError:
+        return Response({"error": "Enter a valid email address"}, status=400)
+
+    if len(message) < 10:
+        return Response(
+            {"error": "Message must be at least 10 characters"},
+            status=400,
+        )
+
+    ContactMessage.objects.create(
+        name=name,
+        email=email,
+        message=message,
+    )
+    notify_admins(
+        "New contact message",
+        f"New message received from {name} ({email}).",
+    )
+
+    return Response(
+        {"message": "Your message has been sent successfully"},
+        status=201,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_contact_messages(request):
+    if request.user.role != "admin":
+        return Response({"error": "Only admins can view contact messages"}, status=403)
+
+    messages = ContactMessage.objects.order_by("-created_at")[:30]
+    return Response([
+        {
+            "id": item.id,
+            "name": item.name,
+            "email": item.email,
+            "message": item.message,
+            "created_at": item.created_at,
+            "is_resolved": item.is_resolved,
+        }
+        for item in messages
+    ])
 
 # =========================
 # SEND OTP (FIXED)
@@ -224,18 +381,38 @@ def send_otp(request):
 
     otp = str(random.randint(100000, 999999))
 
-    PasswordResetOTP.objects.create(
-        email=email,
-        otp=otp
-    )
+    try:
+        send_mail(
+            "HireUp Password Reset OTP",
+            f"Your OTP is {otp}. Valid for 10 minutes.",
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+            fail_silently=False,
+        )
+    except smtplib.SMTPAuthenticationError:
+        logger.exception("SMTP authentication failed while sending OTP to %s", email)
+        return Response(
+            {
+                "error": (
+                    "The email service rejected its credentials. "
+                    "Please configure a valid SMTP app password."
+                )
+            },
+            status=503,
+        )
+    except (smtplib.SMTPException, OSError):
+        logger.exception("Unable to send password reset OTP to %s", email)
+        return Response(
+            {
+                "error": (
+                    "The reset email could not be sent. "
+                    "Please check the email server configuration and try again."
+                )
+            },
+            status=503,
+        )
 
-    send_mail(
-        "HireUp Password Reset OTP",
-        f"Your OTP is {otp}. Valid for 10 minutes.",
-        "noreply@hireup.com",
-        [email],
-        fail_silently=False,
-    )
+    PasswordResetOTP.objects.create(email=email, otp=otp)
 
     return Response({"message": "OTP sent"})
 
@@ -373,7 +550,8 @@ def update_admin_profile(request, id):
             status=404
         )
     
-@api_view(["GET"])
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
 def company_profile(request, id):
 
     try:
@@ -383,9 +561,30 @@ def company_profile(request, id):
             role="company"
         )
 
+        if request.user.id != company.id:
+            return Response({"error": "You can only access your own profile"}, status=403)
+
+        if request.method == "PUT":
+            fields = (
+                "first_name",
+                "last_name",
+                "company_name",
+                "company_address",
+                "company_contact",
+                "company_website",
+                "company_description",
+                "profile_image",
+            )
+            for field in fields:
+                if field in request.data:
+                    setattr(company, field, request.data.get(field))
+            company.save()
+
         serializer = UserSerializer(company)
 
-        return Response(serializer.data)
+        return Response(
+            {"user": serializer.data} if request.method == "PUT" else serializer.data
+        )
 
     except User.DoesNotExist:
 
@@ -395,7 +594,8 @@ def company_profile(request, id):
         )
 
 
-@api_view(["GET"])
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
 def candidate_profile(request, id):
 
     try:
@@ -405,9 +605,20 @@ def candidate_profile(request, id):
             role="candidate"
         )
 
+        if request.user.id != candidate.id:
+            return Response({"error": "You can only access your own profile"}, status=403)
+
+        if request.method == "PUT":
+            for field in ("first_name", "last_name", "profile_image"):
+                if field in request.data:
+                    setattr(candidate, field, request.data.get(field))
+            candidate.save()
+
         serializer = UserSerializer(candidate)
 
-        return Response(serializer.data)
+        return Response(
+            {"user": serializer.data} if request.method == "PUT" else serializer.data
+        )
 
     except User.DoesNotExist:
 
@@ -417,10 +628,14 @@ def candidate_profile(request, id):
         )
 
 @api_view(["PUT"])
+@permission_classes([IsAuthenticated])
 def update_resume(request, id):
 
     try:
         candidate = User.objects.get(id=id, role="candidate")
+
+        if request.user.id != candidate.id:
+            return Response({"error": "You can only update your own resume"}, status=403)
 
         candidate.resume_url = request.data.get("resume_url")
 

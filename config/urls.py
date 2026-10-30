@@ -18,6 +18,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from users.views import imagekit_auth
+from rest_framework_simplejwt.views import TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -31,6 +32,7 @@ urlpatterns = [
     path("api/notifications/", include("notifications.urls")),
     path("api/saved-jobs/", include("savedjobs.urls")),
     path("api/imagekit-auth/",imagekit_auth),
+    path("api/token/refresh/", TokenRefreshView.as_view()),
 ]
 
 if settings.DEBUG:

@@ -24,7 +24,7 @@ class Application(models.Model):
         related_name="applications"
     )
 
-    # Application Details
+    # Candidate submitted details
     cover_letter = models.TextField(
         blank=True,
         null=True
@@ -69,6 +69,7 @@ class Application(models.Model):
         null=True
     )
 
+    # Recruitment status
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -80,7 +81,10 @@ class Application(models.Model):
     )
 
     class Meta:
-        unique_together = ["candidate", "job"]
+        unique_together = [
+            "candidate",
+            "job"
+        ]
 
     def __str__(self):
         return f"{self.candidate.email} - {self.job.title}"

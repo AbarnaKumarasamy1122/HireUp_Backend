@@ -1,30 +1,22 @@
-# from rest_framework import serializers
-# from .models import Application
-
-
-# class ApplicationSerializer(serializers.ModelSerializer):
-
-#     job_title = serializers.CharField(
-#         source="job.title",
-#         read_only=True
-#     )
-
-#     company_name = serializers.CharField(
-#         source="job.company.company_name",
-#         read_only=True
-#     )
-
-#     class Meta:
-#         model = Application
-#         fields = "__all__"
-
 from rest_framework import serializers
 from .models import Application
 
 
 class ApplicationSerializer(serializers.ModelSerializer):
 
-    # Candidate details
+    # IDs
+    candidate_id = serializers.IntegerField(
+        source="candidate.id",
+        read_only=True
+    )
+
+    job_id = serializers.IntegerField(
+        source="job.id",
+        read_only=True
+    )
+
+
+    # Candidate Details
     first_name = serializers.CharField(
         source="candidate.first_name",
         read_only=True
@@ -40,14 +32,15 @@ class ApplicationSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
-    resume_url = serializers.CharField(
-        source="candidate.resume_url",
+
+    # Job Details
+    job_title = serializers.CharField(
+        source="job.title",
         read_only=True
     )
 
-    # Job details
-    job_title = serializers.CharField(
-        source="job.title",
+    company_name = serializers.CharField(
+        source="job.company.company_name",
         read_only=True
     )
 
@@ -58,6 +51,11 @@ class ApplicationSerializer(serializers.ModelSerializer):
 
     location_type = serializers.CharField(
         source="job.location_type",
+        read_only=True
+    )
+
+    location = serializers.CharField(
+        source="job.location",
         read_only=True
     )
 
@@ -74,30 +72,39 @@ class ApplicationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Application
-        fields = [
-            "id",
 
-            # candidate
+        fields = [
+
+            # IDs
+            "id",
+            "candidate_id",
+            "job_id",
+
+            # Candidate
             "first_name",
             "last_name",
             "email",
-            "resume_url",
 
-            # job
+            # Job
             "job_title",
+            "company_name",
             "job_description",
             "location_type",
+            "location",
             "salary",
             "deadline",
 
-            # application
+            # Application details
+            "resume_url",
             "cover_letter",
-            "address",
-            "contact_number",
             "degree",
-            "expected_salary",
             "experience",
+            "expected_salary",
+            "contact_number",
+            "address",
             "skills",
+
+            # Status
             "status",
             "created_at",
         ]

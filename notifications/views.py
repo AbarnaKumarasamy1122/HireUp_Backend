@@ -11,3 +11,13 @@ from .serializers import NotificationSerializer
 def my_notifications(request):
     notes = Notification.objects.filter(user=request.user).order_by("-created_at")
     return Response(NotificationSerializer(notes, many=True).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_notifications(request):
+    if request.user.role != "admin":
+        return Response({"error": "Only admins can view these notifications"}, status=403)
+
+    notes = Notification.objects.filter(user=request.user).order_by("-created_at")[:30]
+    return Response(NotificationSerializer(notes, many=True).data)

@@ -5,8 +5,10 @@ from rest_framework.response import Response
 from .models import Application
 from .serializers import ApplicationSerializer
 from jobs.models import Job
+from interviews.models import Interview
+from interviews.serializers import InterviewSerializer
+from notifications.utils import notify_admins, notify_user
 
-# APPLY JOB
 # APPLY JOB
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -59,6 +61,15 @@ def apply_job(request):
         address=request.data.get("address"),
         skills=request.data.get("skills"),
     )
+    notify_user(
+        application.job.company,
+        "New job application",
+        f"{request.user.first_name} {request.user.last_name} applied for '{application.job.title}'.",
+    )
+    notify_admins(
+        "New application received",
+        f"A new application was submitted for '{application.job.title}'.",
+    )
 
     return Response(
         ApplicationSerializer(application).data
@@ -91,23 +102,166 @@ def my_applications(request):
 def company_applications(request, id):
 
     if request.user.role != "company":
-        return Response(
-            {"error": "Only companies can view applicants"},
-            status=403
-        )
-
+        return Response({"error": "Only companies can view applicants"}, status=403)
 
     applications = Application.objects.filter(
         job__company_id=id
     ).select_related(
         "candidate",
         "job"
+    ).prefetch_related(
+        "interview"
     ).order_by("-created_at")
 
+    data = []
+    for app in applications:
+        serialized = ApplicationSerializer(app).data
 
-    serializer = ApplicationSerializer(
-        applications,
-        many=True
-    )
+        try:
+            serialized["interview"] = InterviewSerializer(app.interview).data
+        except:
+            serialized["interview"] = None
 
-    return Response(serializer.data)
+        data.append(serialized)
+
+    return Response(data)
+
+
+# ============================
+# Shortlist Candidate
+# ============================
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def shortlist_candidate(request, application_id):
+
+    try:
+
+        application = Application.objects.get(
+            id=application_id,
+            job__company=request.user
+        )
+
+        application.status = "shortlisted"
+        application.save()
+        notify_user(
+            application.candidate,
+            "Application shortlisted",
+            f"Your application for '{application.job.title}' was shortlisted.",
+        )
+
+        return Response({
+            "message": "Candidate shortlisted successfully"
+        })
+
+    except Application.DoesNotExist:
+
+        return Response(
+            {"error": "Application not found"},
+            status=404
+        )
+
+
+# ============================
+# Reject Candidate
+# ============================
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def reject_candidate(request, application_id):
+
+    try:
+
+        application = Application.objects.get(
+            id=application_id,
+            job__company=request.user
+        )
+
+        application.status = "rejected"
+        application.save()
+        notify_user(
+            application.candidate,
+            "Application update",
+            f"Your application for '{application.job.title}' was not selected.",
+        )
+
+        return Response({
+            "message": "Candidate rejected"
+        })
+
+    except Application.DoesNotExist:
+
+        return Response(
+            {"error": "Application not found"},
+            status=404
+        )
+
+
+# ============================
+# Accept Candidate
+# Only after interview completed
+# ============================
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def accept_candidate(request, application_id):
+
+    try:
+
+        application = Application.objects.get(
+            id=application_id,
+            job__company=request.user
+        )
+
+        try:
+
+            interview = Interview.objects.get(
+                application=application
+            )
+
+
+            if interview.status != "completed":
+
+                return Response(
+                    {
+                        "error":
+                        "Interview must be completed before acceptance"
+                    },
+                    status=400
+                )
+
+
+        except Interview.DoesNotExist:
+
+            return Response(
+                {
+                    "error":
+                    "No interview scheduled for this candidate"
+                },
+                status=400
+            )
+
+
+        application.status = "accepted"
+
+        application.save()
+        notify_user(
+            application.candidate,
+            "Application accepted",
+            f"Congratulations! Your application for '{application.job.title}' was accepted.",
+        )
+
+
+        return Response(
+            {"message": "Candidate accepted successfully"}
+        )
+
+
+    except Application.DoesNotExist:
+
+        return Response(
+            {
+                "error": "Application not found"
+            },
+            status=404
+        )
